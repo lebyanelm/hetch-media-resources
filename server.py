@@ -65,7 +65,7 @@ def status():
 @flask_cors.cross_origin()
 def upload_a_file():
 	try:
-		# Request an authorization of the user creating the egg
+		# Request an authorization of the user creating the upload
 		auth_response = requests.get("/".join([ os.environ["ACCOUNTS_ENDPOINT"], "authentication/re" ]),
 								headers={ "Authorization": flask.request.headers.get("Authorization") })
 		if auth_response.status_code == 200:
@@ -90,15 +90,15 @@ def upload_a_file():
 					save_path = os.path.join(os.getcwd(), "uploads")
 					if not os.path.exists(save_path):
 						os.mkdir(save_path)
-					save_path = os.path.join(save_path, today_folder)
+					save_path= os.path.join(save_path, today_folder)
 					if not os.path.exists(save_path):
 						os.mkdir(save_path,)
-					save_path = os.path.join(save_path, filename)
+					save_path= os.path.join(save_path, filename)
 					os.rename(tmp_upload_path, save_path)
-					log("Moved to permenant location.")
-					log("Uploaded file ... " + filename + " in " + today_folder)
+					log("Moved to permenant location. 👍")
+					log("Uploaded file ... " + filename + " in " + today_folder + " 🎉")
 
-					uploaded_file_url = f'{os.environ.get("SELF_ENDPOINT")}/{today_folder}/{filename}'
+					uploaded_file_url= f'{os.environ.get("SELF_ENDPOINT")}/{today_folder}/{filename}'
 					data= FileUploadModel(original_filename=uploaded_file.filename,
 								filename=filename,
 								url=uploaded_file_url,
