@@ -2,6 +2,7 @@ certifi==2021.10.8
 charset-normalizer==2.0.12
 click==8.1.3
 console==0.9907
+dnspython==2.2.1
 ezenv==0.92
 Flask==2.1.2
 Flask-Cors==3.0.10
@@ -11,6 +12,9 @@ importlib-metadata==4.11.3
 itsdangerous==2.1.2
 Jinja2==3.1.2
 MarkupSafe==2.1.1
+months==2.0.0
+nanoid==2.0.0
+pyClamd==0.4.0
 pymongo==4.1.1
 python-dotenv==0.20.0
 requests==2.27.1

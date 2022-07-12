@@ -6,7 +6,11 @@ ARG USERPASS=sshpass
 
 # Apt update & apt install required packages
 # whois: required for mkpasswd
-RUN apt update && apt -y install openssh-server whois jq
+RUN apt update && apt -y install openssh-server whois jq clamav clamav-daemon
+
+# Clamd Antivirus scanner setup
+RUN freshclam
+RUN service clamav-daemon restart
 
 # Add a non-root user & set password
 RUN useradd -ms /bin/bash $USERNAME
@@ -31,7 +35,7 @@ USER root
 WORKDIR /app/
 COPY requirements.txt   .
 
-RUN pip install -r requirements.txt --target=/app/python
+RUN pip install -r requirements.txt
 
 # COPY ALL THE REST OF THE SOURCE CODE
 COPY ./  ./
@@ -42,8 +46,8 @@ WORKDIR /app/
 WORKDIR /app/
 
 # PRODUCTION
-ENV PYTHONUNBUFFERED=TRUE
-CMD gunicorn --bind 0.0.0.0:4000 run:server_instance
-EXPOSE 4000
+ENV PYTHONUNBUFFERED=1
+CMD gunicorn --bind 0.0.0.0:4005 run:server_instance
+EXPOSE 4005
 
 # HEALTHCHECK CMD curl --fail http://0.0.0.0:4000/accounts/status || exit 1
