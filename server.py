@@ -19,9 +19,12 @@ from models.time_created import TimeCreatedModel
 from models.file_upload import FileUploadModel
 
 from hetch_utilities import log
+from freshclam import run_freshclam
 
 # Initiate PyClamd scanner instance
 if os.environ.get("ENVIRONMENT") == "production":
+	""" Update virus signatures database. """
+	run_freshclam()
 	pyclamd = pyclamd.ClamdAgnostic()
 
 """
