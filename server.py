@@ -151,7 +151,7 @@ def upload_a_file():
 
 
 # Getting an uploaded file
-@server_instance.route("/media-resources/attachments/<date_uploaded>/<filename>", methods=["GET"])
+@server_instance.route("/media-resources/attachments/<filename>", methods=["GET"])
 def get_uploaded_file(filename):
 	log("Getting file")
 	try:
@@ -166,7 +166,7 @@ def get_uploaded_file(filename):
 
 
 # Getting details of the file
-@server_instance.route("/media-resources/attachments/<date_uploaded>/<filename>/details", methods=["GET"])
+@server_instance.route("/media-resources/attachments/<filename>/details", methods=["GET"])
 @flask_cors.cross_origin()
 def get_uploaded_file_details(filename):
 	file_db_stored = media_resources.find_one({ "filename": filename })
