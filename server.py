@@ -125,6 +125,11 @@ def upload_a_file():
 					
 					media_resources.insert_one(upload_db_entry.__dict__)
 					upload_db_entry._id = str(upload_db_entry._id)
+					
+					async def scan_uploaded_file():
+						subprocess.Popen(["python", "scan_uploaded_file.py", upload_path])
+					asyncio.run(scan_uploaded_file())
+					
 					return Response(cd=200, d=upload_db_entry.__dict__).to_json()
 				else:
 					return Response(cd=400, msg="Selected file above maximum limit of 200MB.").to_json()
