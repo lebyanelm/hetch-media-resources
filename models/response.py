@@ -1,4 +1,5 @@
 import json
+import socket
 from flask import make_response
 from models.http_codes import http_codes
 
@@ -21,6 +22,7 @@ class Response():
 
             if d != None:
                 self.data = d
+            self.cluster_pod = socket.gethostname()
 
         except KeyError as error:
             print('Invalid status code')

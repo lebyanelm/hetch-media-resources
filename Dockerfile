@@ -1,19 +1,27 @@
-FROM python:3.7.2-stretch
+FROM clamav/clamav:latest
 
-# Apt update & apt install required packages
-RUN apt update && apt -y install jq clamav clamav-daemon
 
+# INSTALL ADDITIONAL COMMANDS
+ENV PYTHONUNBUFFERED=1
+RUN apk update && apk add --update --no-cache jq python3 && ln -sf python3 /usr/bin/python
+RUN python3 -m ensurepip
+RUN pip3 install --no-cache --upgrade pip setuptools
+
+
+# INSTALL REQUIREMENTS
 WORKDIR /app/
 COPY requirements.txt   .
-
 RUN pip install -r requirements.txt
 
-# COPY ALL THE REST OF THE SOURCE CODE
+
+# COPY THE SOURCE CODE
 COPY ./  ./
 
-# PRODUCTION
-ENV PYTHONUNBUFFERED=1
-CMD gunicorn --bind 0.0.0.0:4005 run:server_instance
-EXPOSE 4005
 
-# HEALTHCHECK CMD curl --fail http://0.0.0.0:4000/accounts/status || exit 1
+# PRODUCTION
+EXPOSE 4005
+CMD gunicorn --bind 0.0.0.0:4005 run:server_instance
+
+
+# HEALTHCHECK TO CHECK APP STATUS
+HEALTHCHECK CMD curl --fail http://0.0.0.0:4005/accounts/status || exit 1

@@ -4,6 +4,7 @@ HETCH MEDIA RESOURCES
 Handles file uploads and serving media content of the users.
 ________________________________
 """
+import time
 import tempfile
 import traceback
 import flask
@@ -12,20 +13,15 @@ import os
 import dotenv
 import requests
 import nanoid
-import pyclamd
+import pymongo
+import sys
 
 from models.response import Response
 from models.time_created import TimeCreatedModel
 from models.file_upload import FileUploadModel
+from allowed_mimetypes import allowed_mimetypes
 
 from hetch_utilities import log
-from freshclam import run_freshclam
-
-# Initiate PyClamd scanner instance
-if os.environ.get("ENVIRONMENT") == "production":
-	""" Update virus signatures database. """
-	run_freshclam()
-	pyclamd = pyclamd.ClamdAgnostic()
 
 """
 __________________________________
@@ -35,6 +31,9 @@ __________________________________
 """
 if os.environ.get("ENVIRONMENT") != "production":
 	dotenv.load_dotenv()
+else:
+	""" Update virus signatures database. """
+	os.system("freshclam")
 
 
 """
@@ -50,6 +49,32 @@ flask_cors.CORS(server_instance, resources={r"*": {"origins": "*"}})
 
 """
 __________________________________
+DATABASE CONNECTION
+__________________________________
+"""
+IS_DB_CONNECTED = True
+if os.environ.get("MONGODB_HOST"):
+	try:
+		log("Connecting to database and testing connection...")
+		mongo_client = pymongo.MongoClient(os.environ.get("MONGODB_HOST"),
+			server_api=pymongo.server_api.ServerApi("1"))
+		database = mongo_client[os.environ["DATABASE_NAME"]]
+		media_resources  = database.media_resources
+		document_count = media_resources.count_documents({ })
+		log(f"Database successfully connected with `{document_count}` documents in collection `media_resources`.")
+	except:
+		log("Opps something went wrong. " + traceback.format_exc())
+		sys.exit(1)
+else:
+	IS_DB_CONNECTED = False
+	log("No database connection specified. Not connecting to any.")
+
+
+""" Location in which media resource files will be saved. """
+DEFAULT_UPLOAD_PATH = "/media-resources" if os.environ.get("ENVIRONMENT") == "production" else "./uploads"
+
+"""
+__________________________________
 SERVER INSTANCE ROUTES
 __________________________________
 """
@@ -57,10 +82,19 @@ __________________________________
 @server_instance.route("/media-resources/status", methods=["GET"])
 @flask_cors.cross_origin()
 def status():
-	return Response(
-				cd=200,
-				msg="Running",
-				d=dict()).to_json()
+	try:
+		IS_STORAGE_MOUNT = os.path.exists(DEFAULT_UPLOAD_PATH)
+		return Response(
+				cd=200 if all([IS_DB_CONNECTED, IS_STORAGE_MOUNT]) else 500,
+				msg="Running" if all([IS_DB_CONNECTED, IS_STORAGE_MOUNT]) else "Something went wrong.",
+				d={
+					"Database Connection": IS_DB_CONNECTED,
+					"File Storage Mount": IS_STORAGE_MOUNT
+				}).to_json()
+	except:
+		return Response(
+			cd=500,
+			msg="Something went wrong while getting status.").to_json()
 
 
 # Uploading a file
@@ -71,48 +105,45 @@ def upload_a_file():
 		# Request an authorization of the user creating the upload
 		auth_response = requests.get("/".join([ os.environ["ACCOUNTS_ENDPOINT"], "authentication/re" ]),
 								headers={ "Authorization": flask.request.headers.get("Authorization") })
-		if auth_response.status_code == 200:
-			""" Check if files were selected to be uploaded """
-			if flask.request.files.get("selected_file"):
-				# temporarily save the file somewhere temporarily to scan it
-				log("Creating temporary upload folder...")
-				tmpdir = tempfile.mkdtemp()
-				log("Temporary folder created. ✅")
-				uploaded_file = flask.request.files["selected_file"]
-				filename = ".".join([nanoid.generate(size=10), uploaded_file.filename.split(".")[-1]])
-				tmp_upload_path = os.path.join(tmpdir, filename)
-				uploaded_file.save(tmp_upload_path)
-				log("File saved to temporary folder.")
-				
-				""" Use PyClamd to scan the temporary uploaded file. """
-				scan_results = pyclamd.scan_file(tmp_upload_path) if os.environ.get("ENVIRONMENT") == "production" else None
-				if scan_results == None:
-					log("File upload safe from viruses. ✅")
-					""" Uploaded file is safe from viruses upload the file """
-					today_folder = TimeCreatedModel().formatted_date.replace(" ", "_").replace(",", "")
-					save_path = os.path.join(os.getcwd(), "uploads")
-					if not os.path.exists(save_path):
-						os.mkdir(save_path)
-					save_path= os.path.join(save_path, today_folder)
-					if not os.path.exists(save_path):
-						os.mkdir(save_path,)
-					save_path= os.path.join(save_path, filename)
-					os.rename(tmp_upload_path, save_path)
-					log("Moved to permenant location. 👍")
-					log("Uploaded file ... " + filename + " in " + today_folder + " 🎉")
 
-					uploaded_file_url= f'{os.environ.get("SELF_ENDPOINT")}/{today_folder}/{filename}'
-					data= FileUploadModel(original_filename=uploaded_file.filename,
-								filename=filename,
-								url=uploaded_file_url,
-								uid=auth_response.json()["data"]["p+d"]["email_address"]).__dict__
-					return Response(cd=200, d=data).to_json()
+		if auth_response.status_code == 200:
+			selected_file = flask.request.files["selected_file"]
+			uploader_uid = auth_response.json().get("data").get("p+d").get("email_address")
+			filename = ".".join([nanoid.generate(), selected_file.filename.split(".")[-1]])
+			today_folder = TimeCreatedModel().formatted_date.replace(" ", "_").replace(",", "")
+			
+			""" Check if the upload folder path exists. """
+			upload_path = os.path.join(DEFAULT_UPLOAD_PATH, today_folder)
+			if os.path.exists(upload_path) == False: os.mkdir(upload_path)
+
+			""" Save the file to storage """
+			upload_path = os.path.join(upload_path, filename)
+			selected_file.save(upload_path)
+
+			""" Given the file is below max file size save the file upload to the database"""
+			if selected_file.mimetype in allowed_mimetypes:
+				maximum_allowed_upload_size = 2e+8 # In B, 200MB equivalent
+				file_upload_size = os.stat(upload_path).st_size
+				if file_upload_size <= maximum_allowed_upload_size:
+					upload_db_entry = FileUploadModel(dict(
+						original_name = selected_file.filename,
+						filename = filename,
+						uploader_uid = uploader_uid,
+						fpath = upload_path,
+						alt_name = flask.request.form.get("alt_name", None),
+						credits_name = flask.request.form.get("credits_name", None),
+						url_link = os.path.join(os.environ.get("SELF_ENDPOINT"), "attachments", today_folder, filename),
+						mime_type = selected_file.mimetype
+					))
+					
+					media_resources.insert_one(upload_db_entry.__dict__)
+					upload_db_entry._id = str(upload_db_entry._id)
+					return Response(cd=200, d=upload_db_entry.__dict__).to_json()
 				else:
-					os.remove(tmp_upload_path)
-					return Response(cd=400, msg="Uploaded files not trusted. Not uploaded.").to_json()
+					return Response(cd=400, msg="Selected file above maximum limit of 200MB.").to_json()
 			else:
-				return Response(cd=400, msg="No files were selected for upload.").to_json()
-		else: 
+				return Response(cd=400, msg="Selected file not allowed for upload please try another file type.").to_json()
+		else:
 			return Response(cd=auth_response.status_code, d=auth_response.json()).to_json()
 	except:
 		log(traceback.format_exc())
@@ -120,15 +151,58 @@ def upload_a_file():
 
 
 # Getting an uploaded file
-@server_instance.route("/media-resources/<date_uploaded>/<file_name>", methods=["GET"])
-@flask_cors.cross_origin()
-def get_uploaded_file(date_uploaded, file_name):
+@server_instance.route("/media-resources/attachments/<date_uploaded>/<filename>", methods=["GET"])
+def get_uploaded_file(filename):
+	log("Getting file")
 	try:
-		file_path = os.path.join(os.getcwd(), "uploads", date_uploaded, file_name)
-		if os.path.exists(file_path):
-			return flask.send_file(file_path)
+		file_db_stored = media_resources.find_one({ "filename": filename })
+		if file_db_stored and os.path.exists(file_db_stored.get("fpath")):
+			return flask.send_file(file_db_stored.get("fpath"))
 		else:
-			return flask.redirect("https://www.hetchfund.capital/not-found")
+			return flask.make_response("resource not found", 404)
+	except:
+		log(traceback.format_exc())
+		return Response(cd=500, msg="Something went wrong.").to_json()
+
+
+# Getting details of the file
+@server_instance.route("/media-resources/attachments/<date_uploaded>/<filename>/details", methods=["GET"])
+@flask_cors.cross_origin()
+def get_uploaded_file_details(filename):
+	file_db_stored = media_resources.find_one({ "filename": filename })
+	if file_db_stored:
+		file_db_stored["_id"] = str(file_db_stored["_id"])
+		return Response(cd=200, d=file_db_stored).to_json()
+	else:
+		return Response(cd=404, msg="Resource not found.").to_json()
+
+
+# Deleting an uploaded file
+@server_instance.route("/media-resources/attachments/<filename>", methods=["DELETE"])
+@flask_cors.cross_origin()
+def delete_uploaded_file(filename):
+	try:
+		# Request an authorization of the user creating the upload
+		reauth_response = requests.get("/".join([ os.environ["ACCOUNTS_ENDPOINT"], "authentication/re" ]),
+								headers={ "Authorization": flask.request.headers.get("Authorization") })
+
+		if reauth_response.status_code == 200:
+			media_resources_db_file = media_resources.find_one({ "filename": filename })
+			if media_resources_db_file:
+				deleter_uid = reauth_response.json().get("data").get("p+d").get("email_address")
+				if media_resources_db_file.get("uploader_uid") == deleter_uid:
+					if os.path.exists(media_resources_db_file.get("fpath")):
+						os.remove(media_resources_db_file.get("fpath"))
+						media_resources.delete_one({ "filename": filename })
+						return Response(cd=200, msg="Resource has been successfully deleted.").to_json()
+					else:
+						return Response(cd=200, msg="Resource has been already deleted.").to_json()
+				else:
+					return Response(cd=403, msg="Not enough privilages to delete this resource.").to_json()
+			else:
+				return Response(cd=404, msg="Resource not found.").to_json()
+		else:
+			return Response(cd=reauth_response.status_code, d=reauth_response.json()).to_json()
 	except:
 		log(traceback.format_exc())
 		return Response(cd=500, msg="Something went wrong.").to_json()

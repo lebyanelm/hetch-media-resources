@@ -8,7 +8,7 @@ def log(msg: str, is_error=False, is_success=False):
     if bool(os.environ.get("VERBOSE", False)) == True:
         msg = fx.bold(str(msg))
         print(f'{fx.dim("* |")} [{fg.red(msg) if is_error else (fg.white(msg) if not is_success else fg.green(msg))}]')
-log("Verbose mode: " + os.environ.get("VERBOSE", False), True)
+log("Verbose mode: " + os.environ.get("VERBOSE", "False"), "True")
 
 
 def query_to_dict(query_string: str) -> dict:
