@@ -13,6 +13,7 @@ class FileUploadModel(DataModel):
         self.uploader_uid = data.get("uploader_uid")
         self.mime_type = data.get("mime_type")
         self.is_virus_safe = None
+        self.scan_results = None
 
         self.key = self.filename
 

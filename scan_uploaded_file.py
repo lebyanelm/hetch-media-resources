@@ -27,6 +27,7 @@ if os.environ.get("ENVIRONMENT") != "production":
         file_in_db = dbconn.find_one({ "filename": SELECTED_SCAN_FILE.split("/")[-1].split(".")[0] })
         if file_in_db:
             file_in_db["is_virus_safe"] = is_file_safe
+            file_in_db["scan_results"] = stdout
             dbconn.update_one({"filename": file_in_db["filename"]}, {"$set": { **file_in_db }})
     else:
         log(stderr)
