@@ -76,6 +76,7 @@ def status():
 					"File Storage Mount": IS_STORAGE_MOUNT
 				}).to_json()
 	except:
+		log(traceback.format_exc())
 		return Response(
 			cd=500,
 			msg="Something went wrong while getting status.").to_json()
