@@ -157,10 +157,10 @@ def get_uploaded_file(file_id, original_filename):
 
 
 # Getting details of the file
-@server_instance.route("/media-resources/attachments/<filename>/details", methods=["GET"])
+@server_instance.route("/media-resources/attachments/<file_id>/<original_filename>/details", methods=["GET"])
 @flask_cors.cross_origin()
-def get_uploaded_file_details(filename):
-	file_db_stored = media_resources.find_one({ "filename": filename })
+def get_uploaded_file_details(original_filename, file_id):
+	file_db_stored = media_resources.find_one({ "filename": file_id })
 	if file_db_stored:
 		file_db_stored["_id"] = str(file_db_stored["_id"])
 		return Response(cd=200, d=file_db_stored).to_json()
@@ -169,9 +169,9 @@ def get_uploaded_file_details(filename):
 
 
 # Deleting an uploaded file
-@server_instance.route("/media-resources/attachments/<filename>", methods=["DELETE"])
+@server_instance.route("/media-resources/attachments/<filename>/<_>", methods=["DELETE"])
 @flask_cors.cross_origin()
-def delete_uploaded_file(filename):
+def delete_uploaded_file(filename, _):
 	try:
 		# Request an authorization of the user creating the upload
 		reauth_response = requests.get("/".join([ os.environ["ACCOUNTS_ENDPOINT"], "authentication/re" ]),
