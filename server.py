@@ -4,6 +4,7 @@ HETCH MEDIA RESOURCES
 Handles file uploads and serving media content of the users.
 ________________________________
 """
+from dataclasses import field
 import time
 import tempfile
 import traceback
@@ -109,7 +110,8 @@ def upload_a_file():
 		if auth_response.status_code == 200:
 			selected_file = flask.request.files["selected_file"]
 			uploader_uid = auth_response.json().get("data").get("p+d").get("email_address")
-			filename = ".".join([nanoid.generate(), selected_file.filename.split(".")[-1]])
+			rand_filename = nanoid.generate()
+			filename = ".".join([rand_filename, selected_file.filename.split(".")[-1]])
 			today_folder = TimeCreatedModel().formatted_date.replace(" ", "_").replace(",", "")
 			
 			""" Check if the upload folder path exists. """
@@ -127,12 +129,13 @@ def upload_a_file():
 				if file_upload_size <= maximum_allowed_upload_size:
 					upload_db_entry = FileUploadModel(dict(
 						original_name = selected_file.filename,
-						filename = filename,
+						file_extension = selected_file.filename.split(".")[-1],
+						filename = rand_filename,
 						uploader_uid = uploader_uid,
 						fpath = upload_path,
 						alt_name = flask.request.form.get("alt_name", None),
 						credits_name = flask.request.form.get("credits_name", None),
-						url_link = os.path.join(os.environ.get("SELF_ENDPOINT"), "attachments", today_folder, filename),
+						url_link = os.path.join(os.environ.get("SELF_ENDPOINT"), "attachments", rand_filename, selected_file.filename),
 						mime_type = selected_file.mimetype
 					))
 					
@@ -151,12 +154,11 @@ def upload_a_file():
 
 
 # Getting an uploaded file
-@server_instance.route("/media-resources/attachments/<filename>", methods=["GET"])
-def get_uploaded_file(filename):
-	log("Getting file")
+@server_instance.route("/media-resources/attachments/<file_id>/<original_filename>", methods=["GET"])
+def get_uploaded_file(file_id, original_filename):
 	try:
-		file_db_stored = media_resources.find_one({ "filename": filename })
-		if file_db_stored and os.path.exists(file_db_stored.get("fpath")):
+		file_db_stored = media_resources.find_one({ "filename": file_id })
+		if file_db_stored and os.path.exists(file_db_stored.get("fpath")) and file_db_stored.get("original_filename") == original_filename:
 			return flask.send_file(file_db_stored.get("fpath"))
 		else:
 			return flask.make_response("resource not found", 404)
