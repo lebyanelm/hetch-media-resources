@@ -4,9 +4,9 @@ HETCH MEDIA RESOURCES
 Handles file uploads and serving media content of the users.
 ________________________________
 """
+import subprocess
+import asyncio
 from dataclasses import field
-import time
-import tempfile
 import traceback
 import flask
 import flask_cors
@@ -14,14 +14,12 @@ import os
 import dotenv
 import requests
 import nanoid
-import pymongo
-import sys
 
 from models.response import Response
 from models.time_created import TimeCreatedModel
 from models.file_upload import FileUploadModel
 from allowed_mimetypes import allowed_mimetypes
-
+from mongodb_connection import initiate_mongodb_connection
 from hetch_utilities import log
 
 """
@@ -53,22 +51,7 @@ __________________________________
 DATABASE CONNECTION
 __________________________________
 """
-IS_DB_CONNECTED = True
-if os.environ.get("MONGODB_HOST"):
-	try:
-		log("Connecting to database and testing connection...")
-		mongo_client = pymongo.MongoClient(os.environ.get("MONGODB_HOST"),
-			server_api=pymongo.server_api.ServerApi("1"))
-		database = mongo_client[os.environ["DATABASE_NAME"]]
-		media_resources  = database.media_resources
-		document_count = media_resources.count_documents({ })
-		log(f"Database successfully connected with `{document_count}` documents in collection `media_resources`.")
-	except:
-		log("Opps something went wrong. " + traceback.format_exc())
-		sys.exit(1)
-else:
-	IS_DB_CONNECTED = False
-	log("No database connection specified. Not connecting to any.")
+media_resources, IS_DB_CONNECTED = initiate_mongodb_connection()
 
 
 """ Location in which media resource files will be saved. """
