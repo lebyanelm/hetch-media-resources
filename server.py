@@ -4,6 +4,7 @@ HETCH MEDIA RESOURCES
 Handles file uploads and serving media content of the users.
 ________________________________
 """
+from inspect import trace
 import subprocess
 import asyncio
 from dataclasses import field
@@ -16,6 +17,11 @@ import requests
 import nanoid
 import random_utilities
 from random_utilities.models import ResponseModel
+
+# Documentation: https://github.com/apivideo/api.video-python-client/blob/main/docs/VideosApi.md#create
+from apivideo.api.videos_api import VideosApi
+from apivideo.model.video_creation_payload import VideoCreationPayload
+from apivideo import AuthenticatedApiClient, ApiException
 
 from models.file_upload import FileUploadModel
 from allowed_mimetypes import allowed_mimetypes
@@ -50,10 +56,45 @@ DATABASE CONNECTION
 __________________________________
 """
 media_resources, IS_DB_CONNECTED = random_utilities.initiate_mongodb_connection(
-	mongo_host=os.environ["MONGODB_HOST"],
+	mongo_host=os.environ["MONGODB_HOST" if os.environ.get("DEV") == None else "MONGODB_DEV_HOST"],
 	database_name=os.environ["DATABASE_NAME"],
 	collection_name="media_resources"
 )
+
+
+"""
+__________________________________
+VIDEO API AUTHORIZATION : VIDEO MANAGEMENT
+__________________________________
+"""
+def upload_a_video(video_path, resource_id):
+	with AuthenticatedApiClient(os.environ["VIDEO_API_TOKEN"]) as api_client:
+		# Create a video Object
+		print("creating video object")
+		video_creation_payload = VideoCreationPayload(
+			title=resource_id
+		) 
+
+		try:
+			print("creating the remote video")
+			video_interdemiate = VideosApi(api_client).create(video_creation_payload)
+			try:
+				# Open the file and send the file contents to the video.api backend.
+				print("opening the file")
+				video_file = open(video_path, "rb")
+				print("uploading the file")
+				video_complete = VideosApi(api_client).upload(video_interdemiate["video_id"], video_file)
+				print("returning the file")
+				return video_complete
+				
+			except:
+				random_utilities.log(traceback.format_exc())
+				random_utilities.log("")
+				return False, "Something with our video partner. Please try again."
+				
+		except ApiException as e:
+			random_utilities.log(e)
+			return False, "Something went wrong on our side. Please try again."
 
 
 """ Location in which media resource files will be saved. """
@@ -95,8 +136,11 @@ def upload_a_file():
 
 		if auth_response.status_code == 200:
 			selected_file = flask.request.files["file"]
-			print(selected_file)
+
+			# Uploader details
 			uploader_id = auth_response.json().get("data").get("p+d").get("email_address")
+			uploader_name = auth_response.json().get("data").get("display_name")
+
 			rand_filename = nanoid.generate()
 			filename = ".".join([rand_filename, selected_file.filename.split(".")[-1]])
 			today_folder = random_utilities.models.TimeCreatedModel().formatted_date.replace(" ", "_").replace(",", "")
@@ -114,27 +158,36 @@ def upload_a_file():
 				maximum_allowed_upload_size = 2e+8 # In B, 200MB equivalent
 				file_upload_size = os.stat(upload_path).st_size
 				if file_upload_size <= maximum_allowed_upload_size:
+					# Videos are uploaded to a video player hosting partner.
 					upload_db_entry = FileUploadModel(dict(
-						original_name = selected_file.filename.replace(" ", "_"),
-						file_extension = selected_file.filename.split(".")[-1],
-						filename = rand_filename,
-						uploader_id = uploader_id,
-						file_path = upload_path,
-						file_size = (file_upload_size / (1e+6)),
-						alternate_name = flask.request.form.get("alternate_name", None),
-						credits_name = flask.request.form.get("credits_name", None),
-						url_link = os.path.join(os.environ.get("SELF_ENDPOINT"), "attachments", rand_filename, selected_file.filename.replace(" ", "_")),
-						mime_type = selected_file.mimetype
-					))
+							original_name = selected_file.filename.replace(" ", "_"),
+							file_extension = selected_file.filename.split(".")[-1],
+							filename = rand_filename,
+							uploader_id = uploader_id,
+							file_path = upload_path,
+							file_size = (file_upload_size / (1e+6)),
+							alternate_name = flask.request.form.get("alternate_name", None),
+							credits_name = flask.request.form.get("credits_name", None),
+							mime_type = selected_file.mimetype
+						)).__dict__
+					if "video" in selected_file.mimetype:
+						video_upload_response = upload_a_video(upload_path, flask.request.form.get("alternate_name", " ".join(["Uploaded by", uploader_name])))
+						print("uploaded file", upload_db_entry)
+						upload_db_entry["url_link"] = video_upload_response.get("assets").get("player")
+						upload_db_entry["thumbnail"] = video_upload_response.get("assets").get("thumbnail")
+					else:
+						upload_db_entry["url_link"] = os.path.join(os.environ.get("SELF_ENDPOINT"), "attachments", rand_filename, selected_file.filename.replace(" ", "_"))
+						
+					print("saving the uploaded file")
+					media_resources.insert_one(upload_db_entry)
+					upload_db_entry["_id"] = str(upload_db_entry["_id"])
+					print(upload_db_entry)
 					
-					media_resources.insert_one(upload_db_entry.__dict__)
-					upload_db_entry._id = str(upload_db_entry._id)
+					# async def scan_uploaded_file():
+					# 	subprocess.Popen(["python", "scan_uploaded_file.py", upload_path])
+					# asyncio.run(scan_uploaded_file())
 					
-					async def scan_uploaded_file():
-						subprocess.Popen(["python", "scan_uploaded_file.py", upload_path])
-					asyncio.run(scan_uploaded_file())
-					
-					return ResponseModel(cd=200, d=upload_db_entry.__dict__).to_json()
+					return ResponseModel(cd=200, d=upload_db_entry).to_json()
 				else:
 					return ResponseModel(cd=400, msg="Selected file above maximum limit of 200MB.").to_json()
 			else:

@@ -19,9 +19,9 @@ COPY ./  ./
 
 
 # PRODUCTION
-EXPOSE 4005
-CMD gunicorn --bind 0.0.0.0:4005 run:server_instance
+EXPOSE 4004
+CMD gunicorn --bind 0.0.0.0:4004 run:server_instance
 
 
 # HEALTHCHECK TO CHECK APP STATUS
-HEALTHCHECK CMD curl --fail http://0.0.0.0:4005/accounts/status || exit 1
+HEALTHCHECK CMD curl --fail http://0.0.0.0:4004/accounts/status || exit 1
